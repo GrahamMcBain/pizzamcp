@@ -1,0 +1,8 @@
+{
+  "amp.mcpServers": {
+    "dominos": {
+      "command": "npx",
+      "args": ["-y", "pizzamcp"]
+    }
+  }
+}
