@@ -642,17 +642,17 @@ export class DominosOrderService {
         await order.price();
         console.log('Order priced successfully');
         console.log('Order object keys:', Object.keys(order));
-        console.log('amountsBreakdown:', order.amountsBreakdown);
+        console.log('Amounts:', order.Amounts);
 
       } catch (validatePriceError) {
         return `❌ **Validation/Pricing Error**\n\nError during order validation or pricing: ${validatePriceError instanceof Error ? validatePriceError.message : 'Unknown error'}\n\nPlease try again or contact the store directly.`;
       }
 
-      // Get amount from order.amountsBreakdown.customer as shown in docs
-      const customerAmount = order.amountsBreakdown?.customer || 0;
+      // Get amount from order.Amounts.Customer (actual property name)
+      const customerAmount = order.Amounts?.Customer || 0;
       
       if (!customerAmount || customerAmount === 0) {
-        return `❌ **Pricing Error**\n\nCould not determine order total.\n\nDebugging info:\n- amountsBreakdown: ${JSON.stringify(order.amountsBreakdown)}\n- order keys: ${Object.keys(order).join(', ')}\n\nPlease try again.`;
+        return `❌ **Pricing Error**\n\nCould not determine order total.\n\nDebugging info:\n- Amounts: ${JSON.stringify((order as any).Amounts)}\n- order keys: ${Object.keys(order).join(', ')}\n\nPlease try again.`;
       }
 
       // Create payment
