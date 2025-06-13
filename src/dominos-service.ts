@@ -620,7 +620,8 @@ export class DominosOrderService {
         email: this.customerInfo.email || ''
       });
 
-      const order = new dominos.Order({
+      // Try delivery first, then pickup if delivery fails
+      let order = new dominos.Order({
         customer: customer,
         storeID: this.currentStore.StoreID,
         deliveryMethod: 'Delivery'
@@ -663,6 +664,79 @@ export class DominosOrderService {
 
       if (!pricing.success) {
         return `❌ **Pricing Error**\n\n${pricing.message || 'Could not calculate order total.'}`;
+      }
+
+      // Check for API status errors even when success=true
+      if (pricing.result?.Status === -1 || pricing.result?.Order?.Status === -1) {
+        const statusItems = pricing.result?.StatusItems || pricing.result?.Order?.StatusItems || [];
+        const errors = statusItems.map((item: any) => item.Code).join(', ');
+        
+        if (errors.includes('ServiceMethodNotAllowed')) {
+          // Try pickup instead of delivery
+          order = new dominos.Order({
+            customer: customer,
+            storeID: this.currentStore.StoreID,
+            deliveryMethod: 'Carryout'
+          });
+
+          // Re-add items to the new pickup order
+          for (const item of this.orderItems) {
+            const dominosItem = new dominos.Item({
+              code: item.code,
+              qty: item.quantity
+            });
+            order.addItem(dominosItem);
+          }
+
+          // Re-price the pickup order
+          const pickupPricing = await new Promise<any>((resolve, reject) => {
+            order.price((result: any) => {
+              resolve(result);
+            });
+          });
+
+          if (!pickupPricing.success || pickupPricing.result?.Status === -1) {
+            return `❌ **Order Failed**\n\nBoth delivery and pickup failed for this order.\n\nPlease call the store directly at ${this.currentStore?.Phone || 'the store phone'}\n\nError details: ${errors}`;
+          }
+
+          // Continue with pickup pricing
+          const pickupAmount = pickupPricing.result?.Order?.Amounts?.Customer || 0;
+          if (!pickupAmount) {
+            return `❌ **Pickup Pricing Error**\n\nCould not calculate pickup total. Please call the store directly.`;
+          }
+
+          // Create payment for pickup
+          const pickupPayment = new dominos.Payment({
+            amount: pickupAmount + tipAmount,
+            number: paymentInfo.card_number.replace(/\s/g, ''),
+            expiration: paymentInfo.expiration,
+            securityCode: paymentInfo.cvv,
+            postalCode: paymentInfo.zip_code,
+            tipAmount: tipAmount
+          });
+
+          order.addPayment(pickupPayment);
+
+          // Place pickup order
+          const pickupResult = await new Promise<any>((resolve, reject) => {
+            order.place((result: any) => {
+              resolve(result);
+            });
+          });
+
+          if (pickupResult.success) {
+            const orderNumber = pickupResult.result?.Order?.OrderID || 'Unknown';
+            const estimatedTime = pickupResult.result?.Order?.EstimatedWaitMinutes || '15-25';
+            
+            this.startNewOrder();
+            
+            return `🎉 **Pickup Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your pizza will be ready for pickup!\n⏰ Estimated time: ${estimatedTime} minutes\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Total charged: $${(pickupAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app.\n\nNote: Delivery wasn't available, so we switched to pickup for you! 🚗`;
+          } else {
+            return `❌ **Pickup Order Failed**\n\n${pickupResult.message || 'Unable to process pickup order.'}`;
+          }
+        }
+        
+        return `❌ **Order Validation Failed**\n\nThe order could not be processed. Error codes: ${errors}\n\nPlease contact the store directly.`;
       }
 
       // Get customer amount safely with extensive debugging
