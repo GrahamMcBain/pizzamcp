@@ -790,7 +790,9 @@ export class DominosOrderService {
               const pickupErrorMessage = pickupPlaceError instanceof Error ? pickupPlaceError.message : 'Unknown error';
               
               if (pickupErrorMessage.includes('recaptchaVerificationRequired')) {
-                return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your pickup order through:\n\n**📱 Domino's Mobile App or 🌐 Website:**\n1. Visit dominos.com or use the app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Select pickup and complete checkout\n\n**📞 Call for Pickup:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Estimated total: $${(pickupAmount + tipAmount).toFixed(2)}`;
+                const storeDirectUrl = `https://www.dominos.com/en/pages/order/#!/locations/store/${this.currentStore?.StoreID}/`;
+                
+                return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification to prevent automated orders. Please complete your pickup order using:\n\n**🌐 Continue Your Order Online:**\n${storeDirectUrl}\n\n**📱 Domino's Mobile App:**\n• Download the Domino's app\n• Search for store: ${this.currentStore?.StoreID}\n• Add your items and select pickup\n\n**📞 Call for Pickup:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Your Order Details:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Estimated total: $${(pickupAmount + tipAmount).toFixed(2)}\n\n*The online link will take you directly to your local store.*`;
               }
               
               throw pickupPlaceError; // Re-throw other errors
@@ -848,7 +850,10 @@ export class DominosOrderService {
         
         // Handle reCAPTCHA verification requirement
         if (errorMessage.includes('recaptchaVerificationRequired')) {
-          return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your order through one of these options:\n\n**📱 Domino's Mobile App:**\n1. Download the Domino's app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Complete checkout with human verification\n\n**🌐 Domino's Website:**\n1. Visit dominos.com\n2. Add your items and complete checkout\n\n**📞 Call the Store:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${(customerAmount + tipAmount).toFixed(2)}`;
+          const storeUrl = `https://www.dominos.com/en/pages/order/#!/locations/search/?type=Delivery&c=${encodeURIComponent(this.deliveryAddress)}`;
+          const storeDirectUrl = `https://www.dominos.com/en/pages/order/#!/locations/store/${this.currentStore?.StoreID}/`;
+          
+          return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification to prevent automated orders. Please complete your order using one of these options:\n\n**🌐 Continue Your Order Online:**\n${storeDirectUrl}\n\n**📱 Domino's Mobile App:**\n• Download the Domino's app\n• Search for store: ${this.currentStore?.StoreID} in ${(this.deliveryAddress || '').split(',')[1]?.trim()}\n• Add your items and complete checkout\n\n**📞 Call to Order:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Your Order Details:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${(customerAmount + tipAmount).toFixed(2)}\n\n*The online link will take you directly to your local store where you can add the same items.*`;
         }
         
         // Other placement errors
@@ -860,7 +865,9 @@ export class DominosOrderService {
       
       // Handle reCAPTCHA verification requirement at the top level too
       if (errorMessage.includes('recaptchaVerificationRequired')) {
-        return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your order through one of these options:\n\n**📱 Domino's Mobile App:**\n1. Download the Domino's app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Complete checkout with human verification\n\n**🌐 Domino's Website:**\n1. Visit dominos.com\n2. Add your items and complete checkout\n\n**📞 Call the Store:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${this.calculateEstimatedTotal().toFixed(2)}`;
+        const storeDirectUrl = `https://www.dominos.com/en/pages/order/#!/locations/store/${this.currentStore?.StoreID}/`;
+        
+        return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification to prevent automated orders. Please complete your order using one of these options:\n\n**🌐 Continue Your Order Online:**\n${storeDirectUrl}\n\n**📱 Domino's Mobile App:**\n• Download the Domino's app\n• Search for store: ${this.currentStore?.StoreID} in ${(this.deliveryAddress || '').split(',')[1]?.trim()}\n• Add your items and complete checkout\n\n**📞 Call to Order:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Your Order Details:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${this.calculateEstimatedTotal().toFixed(2)}\n\n*The online link will take you directly to your local store where you can add the same items.*`;
       }
       
       return `❌ **Order Error**\n\nSorry, there was an error placing your order: ${errorMessage}.\n\nPlease try again or contact Domino's directly.`;
