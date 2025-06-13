@@ -669,11 +669,15 @@ export class DominosOrderService {
       // Parse address properly
       const addressParts = this.deliveryAddress.split(',').map(part => part.trim());
       const street = addressParts[0] || '';
-      const city = addressParts[1] || '';
-      const stateZip = addressParts[2] || '';
-      const stateParts = stateZip.split(' ');
-      const region = stateParts[0] || 'CA';
-      const postalCode = stateParts[1] || '';
+      
+      // Handle "City STATE ZIP" format
+      const cityStateZip = addressParts[1] || '';
+      const cityStateZipParts = cityStateZip.split(' ');
+      
+      // Extract ZIP (last part), STATE (second to last), and city (everything else)
+      const postalCode = cityStateZipParts.pop() || '';
+      const region = cityStateZipParts.pop() || 'CA';
+      const city = cityStateZipParts.join(' ') || '';
 
       // Create customer with address
       const customer = new dominos.Customer({
@@ -726,7 +730,7 @@ export class DominosOrderService {
             const pickupOrder = new dominos.Order(pickupCustomer);
             pickupOrder.storeID = this.currentStore.StoreID;
             
-            // Set the address using dominos.Address
+            // Set the address using dominos.Address  
             pickupOrder.address = new dominos.Address({
               street: street,
               city: city,
