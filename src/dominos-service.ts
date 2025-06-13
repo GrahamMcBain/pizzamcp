@@ -620,12 +620,20 @@ export class DominosOrderService {
         email: this.customerInfo.email || ''
       });
 
-      // Try delivery first, then pickup if delivery fails
+      // Create order using the proper API pattern
       let order = new dominos.Order({
         customer: customer,
         storeID: this.currentStore.StoreID,
         deliveryMethod: 'Delivery'
       });
+
+      // Set delivery address
+      order.address = {
+        street: this.deliveryAddress.split(',')[0]?.trim() || '',
+        city: this.deliveryAddress.split(',')[1]?.trim() || '',
+        region: this.deliveryAddress.split(',')[2]?.trim()?.split(' ')[0] || '',
+        postalCode: this.deliveryAddress.split(' ').pop() || ''
+      };
 
       // Add items to order
       for (const item of this.orderItems) {
@@ -636,15 +644,7 @@ export class DominosOrderService {
         order.addItem(dominosItem);
       }
 
-      // Set delivery address
-      order.address = {
-        street: this.deliveryAddress.split(',')[0]?.trim() || '',
-        city: this.deliveryAddress.split(',')[1]?.trim() || '',
-        region: this.deliveryAddress.split(',')[2]?.trim()?.split(' ')[0] || '',
-        postalCode: this.deliveryAddress.split(' ').pop() || ''
-      };
-
-      // Validate order
+      // Validate order first
       const validation = await new Promise<any>((resolve, reject) => {
         order.validate((result: any) => {
           resolve(result);
@@ -655,7 +655,7 @@ export class DominosOrderService {
         return `❌ **Order Validation Failed**\n\n${validation.message || 'Please check your order and try again.'}`;
       }
 
-      // Price the order
+      // Price the order 
       const pricing = await new Promise<any>((resolve, reject) => {
         order.price((result: any) => {
           resolve(result);
@@ -666,112 +666,11 @@ export class DominosOrderService {
         return `❌ **Pricing Error**\n\n${pricing.message || 'Could not calculate order total.'}`;
       }
 
-      // Check for API status errors even when success=true
-      if (pricing.result?.Status === -1 || pricing.result?.Order?.Status === -1) {
-        const statusItems = pricing.result?.StatusItems || pricing.result?.Order?.StatusItems || [];
-        const errors = statusItems.map((item: any) => item.Code).join(', ');
-        
-        if (errors.includes('ServiceMethodNotAllowed')) {
-          // Try pickup instead of delivery
-          order = new dominos.Order({
-            customer: customer,
-            storeID: this.currentStore.StoreID,
-            deliveryMethod: 'Carryout'
-          });
-
-          // Re-add items to the new pickup order
-          for (const item of this.orderItems) {
-            const dominosItem = new dominos.Item({
-              code: item.code,
-              qty: item.quantity
-            });
-            order.addItem(dominosItem);
-          }
-
-          // Re-price the pickup order
-          const pickupPricing = await new Promise<any>((resolve, reject) => {
-            order.price((result: any) => {
-              resolve(result);
-            });
-          });
-
-          if (!pickupPricing.success || pickupPricing.result?.Status === -1) {
-            return `❌ **Order Failed**\n\nBoth delivery and pickup failed for this order.\n\nPlease call the store directly at ${this.currentStore?.Phone || 'the store phone'}\n\nError details: ${errors}`;
-          }
-
-          // Continue with pickup pricing
-          const pickupAmount = pickupPricing.result?.Order?.Amounts?.Customer || 0;
-          if (!pickupAmount) {
-            return `❌ **Pickup Pricing Error**\n\nCould not calculate pickup total. Please call the store directly.`;
-          }
-
-          // Create payment for pickup
-          const pickupPayment = new dominos.Payment({
-            amount: pickupAmount + tipAmount,
-            number: paymentInfo.card_number.replace(/\s/g, ''),
-            expiration: paymentInfo.expiration,
-            securityCode: paymentInfo.cvv,
-            postalCode: paymentInfo.zip_code,
-            tipAmount: tipAmount
-          });
-
-          order.addPayment(pickupPayment);
-
-          // Place pickup order
-          const pickupResult = await new Promise<any>((resolve, reject) => {
-            order.place((result: any) => {
-              resolve(result);
-            });
-          });
-
-          if (pickupResult.success) {
-            const orderNumber = pickupResult.result?.Order?.OrderID || 'Unknown';
-            const estimatedTime = pickupResult.result?.Order?.EstimatedWaitMinutes || '15-25';
-            
-            this.startNewOrder();
-            
-            return `🎉 **Pickup Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your pizza will be ready for pickup!\n⏰ Estimated time: ${estimatedTime} minutes\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Total charged: $${(pickupAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app.\n\nNote: Delivery wasn't available, so we switched to pickup for you! 🚗`;
-          } else {
-            return `❌ **Pickup Order Failed**\n\n${pickupResult.message || 'Unable to process pickup order.'}`;
-          }
-        }
-        
-        return `❌ **Order Validation Failed**\n\nThe order could not be processed. Error codes: ${errors}\n\nPlease contact the store directly.`;
-      }
-
-      // Get customer amount safely with extensive debugging
-      let customerAmount = 0;
-      let debugInfo = '';
+      // Create payment using the proper amount from the pricing result
+      const customerAmount = pricing.result?.Order?.Amounts?.Customer || 0;
       
-      try {
-        debugInfo += `Pricing success: ${pricing.success}\n`;
-        debugInfo += `Pricing keys: ${Object.keys(pricing).join(', ')}\n`;
-        
-        if (pricing.result) {
-          debugInfo += `Result keys: ${Object.keys(pricing.result).join(', ')}\n`;
-          
-          if (pricing.result.Order) {
-            debugInfo += `Order keys: ${Object.keys(pricing.result.Order).join(', ')}\n`;
-            if (pricing.result.Order.Amounts) {
-              debugInfo += `Amounts keys: ${Object.keys(pricing.result.Order.Amounts).join(', ')}\n`;
-              customerAmount = pricing.result.Order.Amounts.Customer;
-            }
-          } else if (pricing.result.Amounts) {
-            debugInfo += `Direct Amounts keys: ${Object.keys(pricing.result.Amounts).join(', ')}\n`;
-            customerAmount = pricing.result.Amounts.Customer;
-          } else if (typeof pricing.result.Customer === 'number') {
-            customerAmount = pricing.result.Customer;
-          }
-        }
-        
-        debugInfo += `Customer Amount: ${customerAmount}\n`;
-        
-      } catch (debugError) {
-        debugInfo += `Debug error: ${debugError}\n`;
-      }
-
       if (!customerAmount || customerAmount === 0) {
-        return `❌ **Pricing Error**\n\nCould not determine order total.\n\nDebug Info:\n${debugInfo}\n\nFull response: ${JSON.stringify(pricing, null, 2)}`;
+        return `❌ **Pricing Error**\n\nCould not determine order total. Please try again.`;
       }
 
       // Create payment
@@ -793,17 +692,17 @@ export class DominosOrderService {
         });
       });
 
-      if (orderResult.success) {
-        const orderNumber = orderResult.result?.Order?.OrderID || 'Unknown';
-        const estimatedTime = orderResult.result?.Order?.EstimatedWaitMinutes || '30-45';
-        
-        // Reset order state after successful placement
-        this.startNewOrder();
-        
-        return `🎉 **Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your delicious pizza is being prepared!\n⏰ Estimated delivery: ${estimatedTime} minutes\n📍 Delivering to: ${this.deliveryAddress}\n💰 Total charged: $${(customerAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app or website with your phone number.\n\nEnjoy your meal! 🍕`;
-      } else {
+      if (!orderResult.success) {
         return `❌ **Order Failed**\n\n${orderResult.message || 'Unable to process your order. Please check your payment information and try again.'}`;
       }
+
+      const orderNumber = orderResult.result?.Order?.OrderID || 'Unknown';
+      const estimatedTime = orderResult.result?.Order?.EstimatedWaitMinutes || '30-45';
+      
+      // Reset order state after successful placement
+      this.startNewOrder();
+      
+      return `🎉 **Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your delicious pizza is being prepared!\n⏰ Estimated delivery: ${estimatedTime} minutes\n📍 Delivering to: ${this.deliveryAddress}\n💰 Total charged: $${(customerAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app or website with your phone number.\n\nEnjoy your meal! 🍕`;
 
     } catch (error) {
       return `❌ **Order Error**\n\nSorry, there was an error placing your order: ${error instanceof Error ? error.message : 'Unknown error'}.\n\nPlease try again or contact Domino's directly.`;
