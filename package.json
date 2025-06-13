@@ -25,7 +25,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "dominos": "^3.3.1",
+    "dominos": "^2.1.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
