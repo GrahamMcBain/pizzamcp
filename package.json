@@ -1,6 +1,6 @@
 {
   "name": "pizzamcp",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "Model Context Protocol server for ordering Domino's pizza via conversational interface",
   "main": "dist/index.js",
   "bin": {
