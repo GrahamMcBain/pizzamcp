@@ -112,10 +112,10 @@ declare module 'dominos' {
     storeID: string;
     orderID?: string;
     estimatedWaitMinutes?: number;
-    Amounts?: {
-      Customer: number;
-      Tax: number;
-      Delivery: number;
+    amountsBreakdown?: {
+      customer: number;
+      tax: number;
+      delivery: number;
     };
     payments: Payment[];
 

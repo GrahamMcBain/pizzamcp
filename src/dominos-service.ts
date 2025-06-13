@@ -1,4 +1,4 @@
-import * as dominos from 'dominos';
+const dominos = require('dominos');
 import * as https from 'https';
 
 interface OrderItem {
@@ -46,80 +46,36 @@ export class DominosOrderService {
     try {
       this.deliveryAddress = address;
       
-      // Use dominos store locator
-      const stores = await new Promise<any[]>((resolve, reject) => {
-        dominos.Util.findNearbyStores(address, 'Delivery', (storeData: any) => {
-          if (storeData.success) {
-            resolve(storeData.result.Stores || []);
-          } else {
-            reject(new Error(storeData.message || 'Failed to find stores'));
-          }
-        });
-      });
+      // Use 3.x API: await new NearbyStores(address)
+      const nearbyStores = await new dominos.NearbyStores(address);
 
-      if (!stores || stores.length === 0) {
-        return `❌ **No Delivery Available**\n\nSorry, I couldn't find any Domino's stores that deliver to "${address}". Please check the address or try a different location.`;
+      if (!nearbyStores.stores || nearbyStores.stores.length === 0) {
+        return `❌ **No Stores Found**\n\nSorry, no Domino's stores found that deliver to "${address}". Please try a different address.`;
       }
 
-      // Debug: Show what stores we found
-      console.error('DEBUG: Found stores:', stores.slice(0, 3).map(s => ({
-        name: s.StoreName,
-        isOnlineCapable: s.IsOnlineCapable,
-        isDeliveryStore: s.IsDeliveryStore,
-        isOpen: s.IsOpen,
-        distance: s.MinDistance
-      })));
+      // Find the closest delivery store using 3.x criteria
+      let closestStore = null;
+      let shortestDistance = Infinity;
 
-      // Find the first store that delivers (corrected filtering based on actual API response)
-      let availableStore = stores.find(store => 
-        store.IsOnlineCapable && 
-        store.AllowDeliveryOrders && 
-        store.IsOpen
-      );
-
-      // If strict filtering fails, try more lenient approach
-      if (!availableStore) {
-        availableStore = stores.find(store => store.AllowDeliveryOrders);
+      for (const store of nearbyStores.stores) {
+        if (store.IsOnlineCapable && 
+            store.IsDeliveryStore && 
+            store.IsOpen && 
+            store.ServiceIsOpen?.Delivery && 
+            store.MinDistance < shortestDistance) {
+          shortestDistance = store.MinDistance;
+          closestStore = store;
+        }
       }
 
-      // If still no store, try the closest one
-      if (!availableStore && stores.length > 0) {
-        availableStore = stores[0]; // Take the closest store
+      if (!closestStore) {
+        return `❌ **No Available Stores**\n\nFound ${nearbyStores.stores.length} stores, but none are currently open for delivery to your address. Please try again later or consider pickup.`;
       }
 
-      if (!availableStore) {
-        return `❌ **No Available Stores**\n\nI found Domino's stores near "${address}" but none are currently open for delivery. Please try again later.`;
-      }
-
-      this.currentStore = availableStore;
+      this.currentStore = closestStore;
       
       // Debug: Log the actual store object structure
-      console.error('DEBUG: Selected store object:', JSON.stringify(availableStore, null, 2));
-      
-      // Handle store info based on actual API response structure
-      const storeName = availableStore.StoreName || availableStore.Name || 'Domino\'s Store';
-      
-      // Extract address from the Address object (based on actual API structure)
-      let streetName = '';
-      let city = '';
-      let region = '';
-      
-      if (availableStore.Address) {
-        streetName = availableStore.Address.Street || '';
-        city = availableStore.Address.City || '';
-        region = availableStore.Address.Region || '';
-      } else {
-        // Fallback to other possible structures
-        streetName = availableStore.StreetName || availableStore.street || '';
-        city = availableStore.City || availableStore.city || '';
-        region = availableStore.Region || availableStore.State || availableStore.region || '';
-      }
-      
-      const phone = availableStore.Phone || '';
-      // Distance calculation - stores don't seem to have this field, so calculate or use default
-      const distance = 0; // Will show as found without specific distance
-      
-      return `✅ **Store Found!**\n\n**${storeName}**\n📍 ${streetName}, ${city}, ${region}\n📞 ${phone}\n🚚 Delivers to your address (${Math.round(distance * 10) / 10} miles away)\n\nGreat! Now let's look at their menu. What would you like to see? (Pizza, Sides, Drinks, Desserts, or say "show all" for everything)`;
+      return `✅ **Store Found!**\n\n**Domino's Store**\n📍 ${closestStore.AddressDescription}\n📞 ${closestStore.Phone}\n🚚 Delivers to your address (${closestStore.MinDistance} miles away)\n\nGreat! Now let's look at their menu. What would you like to see? (Pizza, Sides, Drinks, Desserts, or say "show all" for everything)`;
     } catch (error) {
       return `❌ **Error Finding Store**\n\nSorry, I encountered an error while searching for stores: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again with a different address format.`;
     }
@@ -647,8 +603,8 @@ export class DominosOrderService {
         return `❌ **Pricing Error**\n\nPricing failed: ${priceError instanceof Error ? priceError.message : 'Unknown pricing error'}`;
       }
 
-      // Get amount from order.Amounts.Customer (actual property name)
-      const customerAmount = order.Amounts?.Customer || 0;
+      // Get amount from order.amountsBreakdown.customer (3.x API)
+      const customerAmount = order.amountsBreakdown?.customer || 0;
       
       if (!customerAmount || customerAmount === 0) {
         return `❌ **Pricing Error**\n\nCould not determine order total.\n\nDebugging info:\n- Amounts: ${JSON.stringify((order as any).Amounts)}\n- order keys: ${Object.keys(order).join(', ')}\n\nPlease try again.`;
