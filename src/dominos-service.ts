@@ -88,18 +88,19 @@ export class DominosOrderService {
 
     try {
       if (!this.currentMenu) {
-        // Get the store ID from different possible field names
-        const storeId = this.currentStore.StoreID || this.currentStore.StoreId || this.currentStore.store_id || this.currentStore.ID;
+        // Get the store ID using v3.3.1 structure
+        const storeId = this.currentStore.StoreID;
         
         console.error('DEBUG: Loading menu for store ID:', storeId);
         
-        // Try to fetch menu directly from API since dominos package is broken
+        // Use v3.3.1 dominos Menu class
         try {
-          this.currentMenu = await this.fetchMenuDirect(storeId);
+        const dominosMenu = await new dominos.Menu(storeId);
+          this.currentMenu = this.parseV3Menu(dominosMenu);
         } catch (menuError) {
-          console.error('Direct menu fetch failed, using fallback:', menuError);
-          // Use a reliable fallback menu structure with common items
-          this.currentMenu = {
+        console.error('Menu loading failed, using fallback:', menuError);
+        // Use a reliable fallback menu structure with common items
+        this.currentMenu = {
           Categories: [
             {
               Name: "Pizza",
@@ -224,92 +225,189 @@ export class DominosOrderService {
     }
   }
 
-  private async fetchMenuDirect(storeId: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const url = `https://order.dominos.com/power/store/${storeId}/menu?lang=en&structured=true`;
+  private parseV3Menu(dominosMenu: any): any {
+    try {
+      const categories: any[] = [];
       
-      https.get(url, (res) => {
-        let data = '';
+      if (!dominosMenu.menu || !dominosMenu.menu.categories) {
+        return { Categories: categories };
+      }
+      
+      const menu = dominosMenu.menu;
+      
+      // Parse Pizza category
+      if (menu.categories.food?.pizza) {
+        const pizzaCategory = menu.categories.food.pizza;
+        const pizzaProducts: any[] = [];
         
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        
-        res.on('end', () => {
-          try {
-            const menuData = JSON.parse(data);
-            
-            // Transform the menu data into our expected format
-            if (menuData.Products && menuData.Categorization) {
-              const categories: any[] = [];
-              
-              // Create pizza category
-              const pizzaProducts = Object.values(menuData.Products)
-                .filter((product: any) => product.Tags && product.Tags.includes('Pizza'))
-                .slice(0, 10); // Limit to 10 items
-              
-              if (pizzaProducts.length > 0) {
-                categories.push({
-                  Name: 'Pizza',
-                  Products: pizzaProducts.map((p: any) => ({
-                    Name: p.Name,
-                    Code: p.Code,
-                    Price: p.Price,
-                    Description: p.Description
-                  }))
-                });
-              }
-              
-              // Create sides category  
-              const sidesProducts = Object.values(menuData.Products)
-                .filter((product: any) => product.Tags && (
-                  product.Tags.includes('Wings') || 
-                  product.Tags.includes('Bread') ||
-                  product.Tags.includes('Appetizer')
-                ))
-                .slice(0, 8);
-                
-              if (sidesProducts.length > 0) {
-                categories.push({
-                  Name: 'Sides',
-                  Products: sidesProducts.map((p: any) => ({
-                    Name: p.Name,
-                    Code: p.Code,
-                    Price: p.Price,
-                    Description: p.Description
-                  }))
-                });
-              }
-              
-              // Create drinks category
-              const drinkProducts = Object.values(menuData.Products)
-                .filter((product: any) => product.Tags && product.Tags.includes('Drink'))
-                .slice(0, 6);
-                
-              if (drinkProducts.length > 0) {
-                categories.push({
-                  Name: 'Drinks',
-                  Products: drinkProducts.map((p: any) => ({
-                    Name: p.Name,
-                    Code: p.Code,
-                    Price: p.Price,
-                    Description: p.Description
-                  }))
-                });
-              }
-              
-              resolve({ Categories: categories });
-            } else {
-              reject(new Error('Invalid menu data structure'));
+        // Get products from all subcategories
+        if (pizzaCategory.subCategories) {
+          Object.values(pizzaCategory.subCategories).forEach((subCat: any) => {
+            if (subCat.products && Array.isArray(subCat.products)) {
+              subCat.products.forEach((productCode: string) => {
+                const product = menu.products?.[productCode];
+                if (product) {
+                  // Create different variants based on product code
+                  if (productCode === 'S_PIZZA') {
+                    // Build your own pizza - create common sizes
+                    pizzaProducts.push({
+                      Name: 'Large Hand Tossed Cheese Pizza',
+                      Code: '14SCREEN',
+                      Description: 'Classic cheese pizza with our signature sauce',
+                      Price: 1299
+                    });
+                    pizzaProducts.push({
+                      Name: 'Medium Hand Tossed Cheese Pizza', 
+                      Code: '12SCREEN',
+                      Description: 'Classic cheese pizza with our signature sauce',
+                      Price: 999
+                    });
+                    pizzaProducts.push({
+                      Name: 'Large Hand Tossed Pepperoni Pizza',
+                      Code: '14TPEPEN',
+                      Description: 'Pepperoni with cheese and our signature sauce',
+                      Price: 1599
+                    });
+                  } else {
+                    // Specialty pizzas
+                    const variants = this.getProductVariants(product, menu.variants);
+                    variants.forEach(variant => {
+                      pizzaProducts.push({
+                        Name: variant.name,
+                        Code: variant.code,
+                        Description: product.description || '',
+                        Price: variant.price
+                      });
+                    });
+                  }
+                }
+              });
             }
-          } catch (error) {
-            reject(error);
+          });
+        }
+        
+        if (pizzaProducts.length > 0) {
+          categories.push({
+            Name: 'Pizza',
+            Products: pizzaProducts.slice(0, 10) // Limit to 10 items
+          });
+        }
+      }
+      
+      // Parse Sides category
+      const sidesProducts: any[] = [];
+      if (menu.categories.food) {
+        ['bread', 'wings', 'pasta', 'sandwich'].forEach(categoryName => {
+          const category = menu.categories.food[categoryName];
+          if (category && category.products) {
+            category.products.forEach((productCode: string) => {
+              const product = menu.products?.[productCode];
+              if (product) {
+                const variants = this.getProductVariants(product, menu.variants);
+                variants.forEach(variant => {
+                  sidesProducts.push({
+                    Name: variant.name,
+                    Code: variant.code,
+                    Description: product.description || '',
+                    Price: variant.price
+                  });
+                });
+              }
+            });
           }
         });
-      }).on('error', (err) => {
-        reject(err);
+      }
+      
+      if (sidesProducts.length > 0) {
+        categories.push({
+          Name: 'Sides',
+          Products: sidesProducts.slice(0, 8)
+        });
+      }
+      
+      // Parse Drinks category
+      const drinkProducts: any[] = [];
+      if (menu.categories.food?.drinks) {
+        const drinksCategory = menu.categories.food.drinks;
+        if (drinksCategory.products) {
+          drinksCategory.products.forEach((productCode: string) => {
+            const product = menu.products?.[productCode];
+            if (product) {
+              const variants = this.getProductVariants(product, menu.variants);
+              variants.forEach(variant => {
+                drinkProducts.push({
+                  Name: variant.name,
+                  Code: variant.code,
+                  Description: product.description || '',
+                  Price: variant.price
+                });
+              });
+            }
+          });
+        }
+      }
+      
+      if (drinkProducts.length > 0) {
+        categories.push({
+          Name: 'Drinks',
+          Products: drinkProducts.slice(0, 6)
+        });
+      }
+      
+      return { Categories: categories };
+    } catch (error) {
+      console.error('Error parsing v3 menu:', error);
+      return { Categories: [] };
+    }
+  }
+  
+  private getProductVariants(product: any, menuVariants: any): Array<{name: string, code: string, price: number}> {
+    const variants: Array<{name: string, code: string, price: number}> = [];
+    
+    if (product.variants && Array.isArray(product.variants)) {
+      // Take the first few variants to avoid overwhelming the menu
+      product.variants.slice(0, 3).forEach((variantCode: string) => {
+        const variant = menuVariants[variantCode];
+        if (variant) {
+          variants.push({
+            name: variant.name || product.name,
+            code: variantCode,
+            price: this.parsePrice(variant.price)
+          });
+        }
       });
-    });
+    }
+    
+    // If no variants, create a default entry
+    if (variants.length === 0) {
+      variants.push({
+        name: product.name,
+        code: product.code,
+        price: 0
+      });
+    }
+    
+    return variants;
+  }
+  
+  private parsePrice(priceString: string): number {
+    if (!priceString) return 0;
+    const price = parseFloat(priceString);
+    return Math.round(price * 100); // Convert to cents
+  }
+
+  private getProductPrice(product: any): number {
+    // Try to get the price from the product variants
+    if (product.variants) {
+      const variants = Object.values(product.variants);
+      if (variants.length > 0) {
+        const firstVariant: any = variants[0];
+        return firstVariant.price || 0;
+      }
+    }
+    
+    // Fallback to direct price
+    return product.price || 0;
   }
 
   private extractMenuItems(menu: any, categories: string[]): any[] {
@@ -568,26 +666,35 @@ export class DominosOrderService {
     }
 
     try {
-      // Create dominos order
+      // Parse address properly
+      const addressParts = this.deliveryAddress.split(',').map(part => part.trim());
+      const street = addressParts[0] || '';
+      const city = addressParts[1] || '';
+      const stateZip = addressParts[2] || '';
+      const stateParts = stateZip.split(' ');
+      const region = stateParts[0] || 'CA';
+      const postalCode = stateParts[1] || '';
+
+      // Create customer with address
       const customer = new dominos.Customer({
+        address: this.deliveryAddress,
         firstName: this.customerInfo.name.split(' ')[0] || this.customerInfo.name,
         lastName: this.customerInfo.name.split(' ').slice(1).join(' ') || '',
         phone: this.customerInfo.phone,
         email: this.customerInfo.email || ''
       });
 
-      // Create order using the CORRECT API pattern from docs
+      // Create order
       const order = new dominos.Order(customer);
       order.storeID = this.currentStore.StoreID;
       
-      // Set the address properly (required by 3.x API)
-      const addressParts = this.deliveryAddress.split(',');
-      order.address = {
-        street: addressParts[0]?.trim() || '',
-        city: addressParts[1]?.trim() || '',
-        region: addressParts[2]?.trim()?.split(' ')[0] || 'CA',
-        postalCode: this.deliveryAddress.split(' ').pop() || ''
-      };
+      // Set the address using dominos.Address for proper validation
+      order.address = new dominos.Address({
+        street: street,
+        city: city,
+        region: region,
+        postalCode: postalCode
+      });
 
       // Add items to order
       for (const item of this.orderItems) {
@@ -619,14 +726,13 @@ export class DominosOrderService {
             const pickupOrder = new dominos.Order(pickupCustomer);
             pickupOrder.storeID = this.currentStore.StoreID;
             
-            // Set the address properly for pickup (required by 3.x API)
-            const addressParts = this.deliveryAddress.split(',');
-            pickupOrder.address = {
-              street: addressParts[0]?.trim() || '',
-              city: addressParts[1]?.trim() || '',
-              region: addressParts[2]?.trim()?.split(' ')[0] || 'CA',
-              postalCode: this.deliveryAddress.split(' ').pop() || ''
-            };
+            // Set the address using dominos.Address
+            pickupOrder.address = new dominos.Address({
+              street: street,
+              city: city,
+              region: region,
+              postalCode: postalCode
+            });
 
             // Add items to pickup order
             for (const item of this.orderItems) {

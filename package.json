@@ -1,6 +1,6 @@
 {
   "name": "pizzamcp",
-  "version": "1.9.2",
+  "version": "2.0.0",
   "description": "Model Context Protocol server for ordering Domino's pizza via conversational interface",
   "main": "dist/index.js",
   "bin": {
@@ -21,7 +21,7 @@
     "ordering",
     "amp"
   ],
-  "author": "Your Name",
+  "author": "Graham McBain",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -41,10 +41,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/pizzamcp.git"
+    "url": "https://github.com/GrahamMcBain/pizzamcp.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/pizzamcp/issues"
+    "url": "https://github.com/GrahamMcBain/pizzamcp/issues"
   },
-  "homepage": "https://github.com/your-username/pizzamcp#readme"
+  "homepage": "https://github.com/GrahamMcBain/pizzamcp#readme"
 }
