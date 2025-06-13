@@ -633,38 +633,18 @@ export class DominosOrderService {
         order.addItem(dominosItem);
       }
 
-      // Validate order (check for errors in the validation response)
+      // Validate order
       try {
         await order.validate();
-        console.log('Order validation completed');
-        console.log('Order after validation:', JSON.stringify(order, null, 2));
-        
-        // Check if validation actually succeeded by looking at order properties
-        if ((order as any).Status === -1) {
-          const statusItems = (order as any).StatusItems || [];
-          const errors = statusItems.map((item: any) => item.Code).join(', ');
-          return `❌ **Order Validation Failed**\n\nValidation errors: ${errors}\n\nThis might be due to delivery not being available to your address or other order issues.`;
-        }
-        
       } catch (validateError) {
-        return `❌ **Validation Error**\n\nValidation threw error: ${validateError instanceof Error ? validateError.message : 'Unknown validation error'}`;
+        return `❌ **Validation Error**\n\nValidation failed: ${validateError instanceof Error ? validateError.message : 'Unknown validation error'}`;
       }
 
-      // Price order (check for errors in the pricing response)
+      // Price order
       try {
         await order.price();
-        console.log('Order pricing completed');
-        console.log('Order after pricing:', JSON.stringify(order, null, 2));
-        
-        // Check if pricing actually succeeded
-        if ((order as any).Status === -1) {
-          const statusItems = (order as any).StatusItems || [];
-          const errors = statusItems.map((item: any) => item.Code).join(', ');
-          return `❌ **Order Pricing Failed**\n\nPricing errors: ${errors}\n\nThe order could not be priced properly.`;
-        }
-        
       } catch (priceError) {
-        return `❌ **Pricing Error**\n\nPricing threw error: ${priceError instanceof Error ? priceError.message : 'Unknown pricing error'}`;
+        return `❌ **Pricing Error**\n\nPricing failed: ${priceError instanceof Error ? priceError.message : 'Unknown pricing error'}`;
       }
 
       // Get amount from order.Amounts.Customer (actual property name)
