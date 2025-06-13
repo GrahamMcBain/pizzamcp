@@ -109,19 +109,21 @@ declare module 'dominos' {
 
   export class Order {
     customer: Customer;
-    address: {
-      street: string;
-      city: string;
-      region: string;
-      postalCode: string;
+    storeID: string;
+    orderID?: string;
+    estimatedWaitMinutes?: number;
+    amountsBreakdown?: {
+      customer: number;
+      tax: number;
+      delivery: number;
     };
+    payments: Payment[];
 
-    constructor(options: OrderOptions);
+    constructor(customer: Customer);
     addItem(item: Item): void;
-    addPayment(payment: Payment): void;
-    validate(callback: (result: ValidationResult) => void): void;
-    price(callback: (result: PricingResult) => void): void;
-    place(callback: (result: OrderResult) => void): void;
+    validate(): Promise<void>;
+    price(): Promise<void>;
+    place(): Promise<void>;
   }
 
   export class Item {
