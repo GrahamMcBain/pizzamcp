@@ -647,6 +647,14 @@ export class DominosOrderService {
     return response;
   }
 
+  private calculateEstimatedTotal(): number {
+    const subtotal = this.orderItems.reduce((sum, item) => sum + ((item.price || 0) * item.quantity), 0);
+    const deliveryFee = 3.49;
+    const taxRate = 0.08;
+    const tax = (subtotal + deliveryFee) * taxRate;
+    return subtotal + deliveryFee + tax;
+  }
+
   async placeOrder(paymentInfo: PaymentInfo, tipAmount: number = 0): Promise<string> {
     // Validate order state
     if (this.orderItems.length === 0) {
@@ -769,14 +777,24 @@ export class DominosOrderService {
             pickupOrder.payments.push(pickupPayment);
 
             // Place pickup order
-            await pickupOrder.place();
+            try {
+              await pickupOrder.place();
 
-            const pickupOrderNumber = pickupOrder.orderID || 'Unknown';
-            const pickupEstimatedTime = pickupOrder.estimatedWaitMinutes || '15-25';
-            
-            this.startNewOrder();
-            
-            return `🎉 **Pickup Order Placed Successfully!**\n\n**Order #${pickupOrderNumber}**\n\n🍕 Your pizza will be ready for pickup!\n⏰ Estimated time: ${pickupEstimatedTime} minutes\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Total charged: $${(pickupAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app.\n\n**Note: Delivery wasn't available to your address, so we switched to pickup automatically! 🚗**`;
+              const pickupOrderNumber = pickupOrder.orderID || 'Unknown';
+              const pickupEstimatedTime = pickupOrder.estimatedWaitMinutes || '15-25';
+              
+              this.startNewOrder();
+              
+              return `🎉 **Pickup Order Placed Successfully!**\n\n**Order #${pickupOrderNumber}**\n\n🍕 Your pizza will be ready for pickup!\n⏰ Estimated time: ${pickupEstimatedTime} minutes\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Total charged: $${(pickupAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app.\n\n**Note: Delivery wasn't available to your address, so we switched to pickup automatically! 🚗**`;
+            } catch (pickupPlaceError) {
+              const pickupErrorMessage = pickupPlaceError instanceof Error ? pickupPlaceError.message : 'Unknown error';
+              
+              if (pickupErrorMessage.includes('recaptchaVerificationRequired')) {
+                return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your pickup order through:\n\n**📱 Domino's Mobile App or 🌐 Website:**\n1. Visit dominos.com or use the app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Select pickup and complete checkout\n\n**📞 Call for Pickup:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Estimated total: $${(pickupAmount + tipAmount).toFixed(2)}`;
+              }
+              
+              throw pickupPlaceError; // Re-throw other errors
+            }
             
           } catch (pickupError) {
             return `❌ **Order Failed**\n\nBoth delivery and pickup failed.\n\nDelivery error: ${errorMessage}\nPickup error: ${pickupError instanceof Error ? pickupError.message : 'Unknown pickup error'}\n\nPlease call the store directly at ${this.currentStore?.Phone || 'the store phone'}`;
@@ -813,20 +831,39 @@ export class DominosOrderService {
       // Add payment using the correct method from docs
       order.payments.push(payment);
 
-      // Place order (direct await as shown in docs)
-      await order.place();
+      // Attempt to place order
+      try {
+        await order.place();
 
-      // Get order details from the order object itself
-      const orderNumber = order.orderID || 'Unknown';
-      const estimatedTime = order.estimatedWaitMinutes || '30-45';
-      
-      // Reset order state after successful placement
-      this.startNewOrder();
-      
-      return `🎉 **Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your delicious pizza is being prepared!\n⏰ Estimated delivery: ${estimatedTime} minutes\n📍 Delivering to: ${this.deliveryAddress}\n💰 Total charged: $${(customerAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app or website with your phone number.\n\nEnjoy your meal! 🍕`;
+        // Get order details from the order object itself
+        const orderNumber = order.orderID || 'Unknown';
+        const estimatedTime = order.estimatedWaitMinutes || '30-45';
+        
+        // Reset order state after successful placement
+        this.startNewOrder();
+        
+        return `🎉 **Order Placed Successfully!**\n\n**Order #${orderNumber}**\n\n🍕 Your delicious pizza is being prepared!\n⏰ Estimated delivery: ${estimatedTime} minutes\n📍 Delivering to: ${this.deliveryAddress}\n💰 Total charged: $${(customerAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app or website with your phone number.\n\nEnjoy your meal! 🍕`;
+      } catch (placeError) {
+        const errorMessage = placeError instanceof Error ? placeError.message : 'Unknown error';
+        
+        // Handle reCAPTCHA verification requirement
+        if (errorMessage.includes('recaptchaVerificationRequired')) {
+          return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your order through one of these options:\n\n**📱 Domino's Mobile App:**\n1. Download the Domino's app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Complete checkout with human verification\n\n**🌐 Domino's Website:**\n1. Visit dominos.com\n2. Add your items and complete checkout\n\n**📞 Call the Store:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${(customerAmount + tipAmount).toFixed(2)}`;
+        }
+        
+        // Other placement errors
+        return `❌ **Order Placement Error**\n\nSorry, there was an error placing your order: ${errorMessage}.\n\nPlease try again or contact Domino's directly at ${this.currentStore?.Phone || 'the store phone'}.`;
+      }
 
     } catch (error) {
-      return `❌ **Order Error**\n\nSorry, there was an error placing your order: ${error instanceof Error ? error.message : 'Unknown error'}.\n\nPlease try again or contact Domino's directly.`;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Handle reCAPTCHA verification requirement at the top level too
+      if (errorMessage.includes('recaptchaVerificationRequired')) {
+        return `🤖 **reCAPTCHA Verification Required**\n\nDomino's requires human verification for online orders. Please complete your order through one of these options:\n\n**📱 Domino's Mobile App:**\n1. Download the Domino's app\n2. Add your items: ${this.orderItems.map(item => `${item.quantity}x ${item.name}`).join(', ')}\n3. Complete checkout with human verification\n\n**🌐 Domino's Website:**\n1. Visit dominos.com\n2. Add your items and complete checkout\n\n**📞 Call the Store:**\n${this.currentStore?.Phone || 'Store phone'}\n\n**Order Summary:**\n${this.orderItems.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name} - $${((item.price || 0) * item.quantity).toFixed(2)}`).join('\n')}\n📍 Delivery to: ${this.deliveryAddress}\n💰 Estimated total: $${this.calculateEstimatedTotal().toFixed(2)}`;
+      }
+      
+      return `❌ **Order Error**\n\nSorry, there was an error placing your order: ${errorMessage}.\n\nPlease try again or contact Domino's directly.`;
     }
   }
 }
