@@ -593,7 +593,69 @@ export class DominosOrderService {
       try {
         await order.validate();
       } catch (validateError) {
-        return `❌ **Validation Error**\n\nValidation failed: ${validateError instanceof Error ? validateError.message : 'Unknown validation error'}`;
+        const errorMessage = validateError instanceof Error ? validateError.message : 'Unknown validation error';
+        
+        // Check for ServiceMethodNotAllowed (delivery not available)
+        if (errorMessage.includes('ServiceMethodNotAllowed')) {
+          // Try pickup instead of delivery
+          try {
+            const pickupCustomer = new dominos.Customer({
+              address: this.deliveryAddress,
+              firstName: this.customerInfo.name.split(' ')[0] || this.customerInfo.name,
+              lastName: this.customerInfo.name.split(' ').slice(1).join(' ') || '',
+              phone: this.customerInfo.phone,
+              email: this.customerInfo.email || ''
+            });
+
+            const pickupOrder = new dominos.Order(pickupCustomer);
+            pickupOrder.storeID = this.currentStore.StoreID;
+
+            // Add items to pickup order
+            for (const item of this.orderItems) {
+              const dominosItem = new dominos.Item({
+                code: item.code,
+                qty: item.quantity
+              });
+              pickupOrder.addItem(dominosItem);
+            }
+
+            // Validate and price pickup order
+            await pickupOrder.validate();
+            await pickupOrder.price();
+
+            const pickupAmount = pickupOrder.amountsBreakdown?.customer || 0;
+            if (!pickupAmount) {
+              return `❌ **Pickup Error**\n\nCould not determine pickup total. Please call the store directly.`;
+            }
+
+            // Create payment for pickup
+            const pickupPayment = new dominos.Payment({
+              amount: pickupAmount + tipAmount,
+              number: paymentInfo.card_number.replace(/\s/g, ''),
+              expiration: paymentInfo.expiration,
+              securityCode: paymentInfo.cvv,
+              postalCode: paymentInfo.zip_code,
+              tipAmount: tipAmount
+            });
+
+            pickupOrder.payments.push(pickupPayment);
+
+            // Place pickup order
+            await pickupOrder.place();
+
+            const pickupOrderNumber = pickupOrder.orderID || 'Unknown';
+            const pickupEstimatedTime = pickupOrder.estimatedWaitMinutes || '15-25';
+            
+            this.startNewOrder();
+            
+            return `🎉 **Pickup Order Placed Successfully!**\n\n**Order #${pickupOrderNumber}**\n\n🍕 Your pizza will be ready for pickup!\n⏰ Estimated time: ${pickupEstimatedTime} minutes\n🏪 Pickup at: ${this.currentStore?.AddressDescription || 'Store address'}\n💰 Total charged: $${(pickupAmount + tipAmount).toFixed(2)}\n\n📧 You should receive an email confirmation shortly.\n📱 Track your order using the Domino's app.\n\n**Note: Delivery wasn't available to your address, so we switched to pickup automatically! 🚗**`;
+            
+          } catch (pickupError) {
+            return `❌ **Order Failed**\n\nBoth delivery and pickup failed.\n\nDelivery error: ${errorMessage}\nPickup error: ${pickupError instanceof Error ? pickupError.message : 'Unknown pickup error'}\n\nPlease call the store directly at ${this.currentStore?.Phone || 'the store phone'}`;
+          }
+        }
+        
+        return `❌ **Validation Error**\n\nValidation failed: ${errorMessage}`;
       }
 
       // Price order
