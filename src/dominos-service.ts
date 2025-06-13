@@ -579,6 +579,15 @@ export class DominosOrderService {
       // Create order using the CORRECT API pattern from docs
       const order = new dominos.Order(customer);
       order.storeID = this.currentStore.StoreID;
+      
+      // Set the address properly (required by 3.x API)
+      const addressParts = this.deliveryAddress.split(',');
+      order.address = {
+        street: addressParts[0]?.trim() || '',
+        city: addressParts[1]?.trim() || '',
+        region: addressParts[2]?.trim()?.split(' ')[0] || 'CA',
+        postalCode: this.deliveryAddress.split(' ').pop() || ''
+      };
 
       // Add items to order
       for (const item of this.orderItems) {
@@ -609,6 +618,15 @@ export class DominosOrderService {
 
             const pickupOrder = new dominos.Order(pickupCustomer);
             pickupOrder.storeID = this.currentStore.StoreID;
+            
+            // Set the address properly for pickup (required by 3.x API)
+            const addressParts = this.deliveryAddress.split(',');
+            pickupOrder.address = {
+              street: addressParts[0]?.trim() || '',
+              city: addressParts[1]?.trim() || '',
+              region: addressParts[2]?.trim()?.split(' ')[0] || 'CA',
+              postalCode: this.deliveryAddress.split(' ').pop() || ''
+            };
 
             // Add items to pickup order
             for (const item of this.orderItems) {
